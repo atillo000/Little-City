@@ -123,6 +123,13 @@ On Windows PowerShell, use `npm.cmd` if execution policy blocks `npm.ps1`. Vite 
 
 All characters, vehicles, and scenery are procedural geometry. No model downloads or API keys are required.
 
+## Deploy to Vercel
+
+`vercel.json` configures the deployment: `npm ci`, `npm run build`, and static serving of `dist/`. It sends the production security headers from `src/config/security.js` (CSP including `frame-ancestors 'none'`, `nosniff`, referrer and permissions policies). It also caches the content-hashed `/assets/*` files, including the large Rapier chunk, for a year. `index.html` and `public/` files keep Vercel's default revalidation, so new deployments show up immediately. A unit test keeps the headers identical to `security.js`: after changing the policy, update both files.
+
+- **From Git:** import the repository in the Vercel dashboard. The framework (Vite), commands and output directory come from `vercel.json`; no environment variables are needed. Keep the project's Node.js version at 20.x or newer (Vite 7 needs 20.19+).
+- **From the CLI:** `npx vercel` for a preview deployment, `npx vercel --prod` for production. `.vercelignore` keeps `node_modules`, `dist` and test output from being uploaded.
+
 ## Maintenance checks
 
 Run `npm test` for gameplay, architecture and security regressions, `npm run test:architecture` for dependency boundaries, `npm run test:browser` for production browser checks, and `npm run audit:security` for known dependency advisories. Browser snapshots are generated under `test-results/`; test code belongs under `tests/`. Production hosting must apply the response headers described in [Security boundaries](docs/SECURITY.md).

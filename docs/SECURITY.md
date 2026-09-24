@@ -15,7 +15,7 @@ The policy follows [MDN's CSP guidance](https://developer.mozilla.org/en-US/docs
 
 ## Static hosting
 
-The built HTML retains its CSP on any static host. Preview headers do **not** automatically configure a deployed hosting provider. Configure the HTTP response headers from `src/config/security.js` on your production host, including `frame-ancestors 'none'` (which cannot be enforced through a meta tag), and serve over HTTPS. Enable HSTS only after confirming the domain and required subdomains are permanently served over HTTPS.
+The built HTML retains its CSP on any static host. Preview headers do **not** automatically configure a deployed hosting provider. For Vercel, `vercel.json` sends these headers on every response, and `tests/unit/security.test.js` fails if they drift from `PREVIEW_HEADERS`. Vercel serves its domains over HTTPS with HSTS. On any other host, configure the HTTP response headers from `src/config/security.js`, including `frame-ancestors 'none'` (which cannot be enforced through a meta tag), and serve over HTTPS. Enable HSTS only after confirming the domain and required subdomains are permanently served over HTTPS.
 
 Do not expose the Vite development server publicly. `VITE_*` variables are bundled into public client code, so they must never contain private credentials. When adding Supabase or another backend, implement authorization/storage policies there and update the CSP with only the specific required origins. Do not weaken the entire policy to accommodate a new provider.
 

@@ -9,7 +9,8 @@ import { parseWeather, forecastUrl } from '../../src/models/environment.js';
 import { fetchWeather } from '../../src/services/weatherClient.js';
 import { officialVideoUrl, musicFileUrl, audioFileError } from '../../src/services/mediaSources.js';
 import { freshProgress } from '../../src/models/neighborhood/missions.js';
-import { CONTENT_SECURITY_POLICY } from '../../src/config/security.js';
+import { readFileSync } from 'node:fs';
+import { CONTENT_SECURITY_POLICY, PREVIEW_HEADERS } from '../../src/config/security.js';
 import { MUSIC_ENABLED } from '../../src/config/musicConfig.js';
 const memory = () => { const data = new Map(); return { getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value) }; };
 test('guest saves deduplicate IDs, validate progress, cap input and preserve a valid active guest', () => {
@@ -59,4 +60,14 @@ test('media accepts only known sources and bounded local audio files; music stay
   assert.equal(audioFileError({ name: 'x.mp3', size: 100, type: 'audio/mpeg' }), '');
   assert(CONTENT_SECURITY_POLICY.includes("script-src 'self' 'wasm-unsafe-eval'"));
   assert(!CONTENT_SECURITY_POLICY.includes("'unsafe-eval'"));
+});
+test('the Vercel deployment sends exactly the production security headers and caches only hashed assets', () => {
+  const vercel = JSON.parse(readFileSync(new URL('../../vercel.json', import.meta.url), 'utf8'));
+  assert.equal(vercel.outputDirectory, 'dist'); assert.equal(vercel.buildCommand, 'npm run build'); assert.equal(vercel.installCommand, 'npm ci');
+  const site = vercel.headers.find(rule => rule.source === '/(.*)');
+  // vercel.json cannot import src/config/security.js, so this keeps the two copies of the policy identical.
+  assert.deepEqual(Object.fromEntries(site.headers.map(({ key, value }) => [key, value])), PREVIEW_HEADERS);
+  assert.match(PREVIEW_HEADERS['Content-Security-Policy'], /frame-ancestors 'none'/);
+  const immutable = vercel.headers.filter(rule => rule.headers.some(h => h.key === 'Cache-Control' && /immutable/.test(h.value)));
+  assert.deepEqual(immutable.map(rule => rule.source), ['/assets/(.*)'], 'index.html and music must not be cached as immutable');
 });
