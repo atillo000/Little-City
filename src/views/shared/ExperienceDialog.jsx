@@ -8,6 +8,6 @@ export function ExperienceDialog({ title, children, onClose, className = '' }) {
   }, []);
   return <dialog className={`experience-dialog ${className}`} ref={ref} aria-labelledby={titleId} onCancel={event => { event.preventDefault(); onClose?.(); }}>
     {onClose && <button className="experience-close" onClick={onClose} aria-label="Close dialog">×</button>}
-    <span className="experience-eyebrow">LITTLE CITY / NEIGHBORHOOD ADVENTURES</span><h2 id={titleId}>{title}</h2>{children}
+    <span className="experience-eyebrow">LITTLE CITY / WORLD TOUR</span><h2 id={titleId}>{title}</h2>{children}
   </dialog>;
 }

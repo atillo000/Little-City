@@ -82,6 +82,9 @@ export function mountAdventure(host, session, input, paused, onUpdate, onError) 
         else box([5, 5, 5], city.trees === 'cherry' ? '#dca8bd' : '#648567', [tree.x, 8, tree.z]);
       }
     }
+    // Street spots: food stalls (awning in the city colour), bus shelters, benches. Pedestrians use their slots.
+    const SPOT_COLORS = { cart: '#c9b89a', counter: '#e9dcc4', pole: '#5c6770', awning: city.color, panel: '#9fc3cc', roof: '#dfe5e6', seat: '#8a6a4b', backrest: '#8a6a4b', leg: '#4d555c', sign: '#5c6770', plate: '#2f6fb0' };
+    for (const spot of layout.spots) for (const prop of spot.props) box([prop.size[0], prop.height, prop.size[1]], SPOT_COLORS[prop.kind], [prop.x, prop.y, prop.z]);
     // A coastal promenade and an airport at the edge of every district.
     box([7, 0.3, 875], '#d5c7b5', [425, 0, 0]); box([21, 0.1, 220], '#53616b', [-413, 0.1, -200]);
     for (let z = -300; z < -100; z += 20) box([1, 0.05, 10], '#f1ebd2', [-413, 0.2, z]);
@@ -104,10 +107,7 @@ export function mountAdventure(host, session, input, paused, onUpdate, onError) 
       const mat = new THREE.SpriteMaterial({ map: texture }); materials.set('label-' + text, mat); const sprite = new THREE.Sprite(mat); sprite.position.set(x, 6, z); sprite.scale.set(8, 2, 1); root.add(sprite);
     }
     label('SAFEHOUSE', 8, 12, '#86edcb'); label(city.district.toUpperCase(), 0, -32, city.color); label('AIRPORT', -413, -110, '#ffffff');
-    avatar = createCharacter(root, kit, { shirt: '#e5ded5' }); avatar.avatar.visible = true; avatar.rig = createRagdollRig(avatar.avatar, 'player');
-    const hand = avatar.avatar.getObjectByName('right-hand'); const gun = kit.box([0.16, 0.22, 0.65], '#25303c', [0, -0.16, 0.23], hand); gun.name = 'pistol';
-    if (!materials.has('muzzle')) materials.set('muzzle', new THREE.MeshBasicMaterial({ color: '#ffe7a3' }));
-    muzzle = new THREE.Mesh(unitBox, materials.get('muzzle')); muzzle.scale.set(2.2, 1.6, 0.9); muzzle.position.set(0, 0, 0.75); muzzle.visible = false; gun.add(muzzle);
+    buildAvatar(session.current.appearance);
     // Pooled blood droplets and ground stains, updated as instances.
     if (!materials.has('blood')) { materials.set('blood', new THREE.MeshStandardMaterial({ color: '#7b0913', roughness: 0.35 })); materials.set('blood-pool', new THREE.MeshStandardMaterial({ color: '#4f050c', roughness: 0.18, metalness: 0.05 })); }
     bloodDrops = new THREE.InstancedMesh(unitBox, materials.get('blood'), BLOOD_DROPS); bloodDrops.frustumCulled = false; bloodDrops.count = 0; root.add(bloodDrops);
@@ -133,7 +133,18 @@ export function mountAdventure(host, session, input, paused, onUpdate, onError) 
     const ringGeo = new THREE.TorusGeometry(2.2, 0.12, 6, 24); geometries.add(ringGeo); targetRing = new THREE.Mesh(ringGeo, materials.get('lock')); targetRing.rotation.x = Math.PI / 2; root.add(targetRing);
     const p = actor(session.current); camera.position.set(p.x, 11, p.z + 24); orbit.target.set(p.x, 1.8, p.z); orbit.update();
   }
+  // The player's look comes from the character creator; editing it mid-game rebuilds the avatar in place.
+  let avatarLook;
+  function buildAvatar(appearance) {
+    if (avatar) root.remove(avatar.avatar);
+    avatarLook = appearance;
+    avatar = createCharacter(root, kit, { shirt: '#e5ded5', ...appearance, scale: session.current.player.look?.scale || 1 }); avatar.avatar.visible = true; avatar.rig = createRagdollRig(avatar.avatar, 'player');
+    const hand = avatar.avatar.getObjectByName('right-hand'); const gun = kit.box([0.16, 0.22, 0.65], '#25303c', [0, -0.16, 0.23], hand); gun.name = 'pistol';
+    if (!materials.has('muzzle')) materials.set('muzzle', new THREE.MeshBasicMaterial({ color: '#ffe7a3' }));
+    muzzle = new THREE.Mesh(unitBox, materials.get('muzzle')); muzzle.scale.set(2.2, 1.6, 0.9); muzzle.position.set(0, 0, 0.75); muzzle.visible = false; gun.add(muzzle);
+  }
   const follow = new THREE.Vector3(), shift = new THREE.Vector3();
+  const nearCamera = person => (person.x - orbit.target.x) ** 2 + (person.z - orbit.target.z) ** 2 < 240 * 240;
   // Cars take their full pose from Rapier: chassis position/orientation, wheel spin, steering and suspension travel.
   function updateCar(model, body) {
     model.car.position.set(body.x, (body.y || 0) + Math.sin(body.impact * 9) * body.impact * 0.06, body.z);
@@ -213,11 +224,12 @@ export function mountAdventure(host, session, input, paused, onUpdate, onError) 
   renderer.setAnimationLoop(time => {
     const s = session.current;
     if (lastCity !== s.city) build(s.cityInfo);
+    else if (s.appearance !== avatarLook) buildAvatar(s.appearance);
     const dt = lastTime ? Math.min(0.05, (time - lastTime) / 1000) : 0; lastTime = time;
     const yaw = Math.atan2(orbit.target.x - camera.position.x, orbit.target.z - camera.position.z);
     if (!paused.current && !document.hidden) stepWorld(s, input.current, dt, yaw);
     const p = actor(s), point = objectivePoint(s), step = paused.current || document.hidden ? 0 : dt;
-    avatar.avatar.visible = !s.driving; avatar.rig.before(s.player); avatar.update(s.player, paused.current ? 0 : dt); avatar.avatar.position.y = 0.2 + s.player.height; avatar.avatar.getObjectByName('pistol').visible = s.weapon === 'pistol';
+    avatar.avatar.visible = !s.driving; avatar.rig.before(s.player); avatar.update(s.player, paused.current ? 0 : dt); avatar.avatar.position.y = 0.2 * (s.player.look?.scale || 1) + s.player.height; avatar.avatar.getObjectByName('pistol').visible = s.weapon === 'pistol';
     posePlayer(s); avatar.rig.after(s.player, step);
     for (const hit of s.impacts) {
       if (hit.id <= lastImpact) continue;
@@ -249,7 +261,8 @@ export function mountAdventure(host, session, input, paused, onUpdate, onError) 
       const car = s.policeCars[i]; updateCar(model, car);
       model.lights.forEach((light, side) => { light.visible = ACTIVE_UNIT.includes(car.state) && Math.floor(s.time * 8) % 2 === side; });
     });
-    pedestrians.forEach((model, i) => { const person = s.pedestrians[i]; model.rig.before(person); model.update(person, paused.current ? 0 : dt); model.rig.after(person, step); });
+    // Far-away pedestrians (beyond the fog) are neither drawn nor animated.
+    pedestrians.forEach((model, i) => { const person = s.pedestrians[i]; model.avatar.visible = nearCamera(person); if (!model.avatar.visible) return; model.rig.before(person); model.update(person, paused.current ? 0 : dt); model.rig.after(person, step); });
     follow.set(p.x, 1.8 + (s.player.height || 0) * 0.3, p.z); shift.copy(follow).sub(orbit.target); camera.position.add(shift); orbit.target.copy(follow);
     orbit.enabled = !paused.current; orbit.update();
     // Keep the camera in front of walls, including when orbiting around a corner.

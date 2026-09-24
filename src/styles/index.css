@@ -1,7 +1,4 @@
-@import './simulation.css';
-@import './experience.css';
-@import './game.css';
-@import './lounge.css';
-@import './styles.css';
+@import './base.css';
 @import './adventure.css';
+@import './creator.css';
 .mode-loading{padding:40px;background:#172831;color:white;height:100vh}

@@ -73,6 +73,21 @@ export function createStreetNpc(scene, kit, { shirt = '#9ab6c0', police = false,
           arms[i].rotation.z = (i ? 1 : -1) * 0.5; arms[i].rotation.x = -0.25; elbows[i].rotation.x = -0.1;
         }
       }
+      // Street-spot poses (worldPedestrians.js): seated on benches, serving at a stall, chatting in a circle.
+      if (!down && !armed && !person.panic && person.pose) {
+        const calling = idle && business;
+        for (let i = 0; i < 2; i++) {
+          if (calling && i === 1) continue;
+          if (person.pose === 'sit') {
+            legs[i].rotation.x = -1.45; knees[i].rotation.x = 1.45; arms[i].rotation.x = -0.45; arms[i].rotation.z = (i ? 1 : -1) * 0.12; elbows[i].rotation.x = -0.75;
+          } else if (person.pose === 'vendor') {
+            arms[i].rotation.x = -0.9 + Math.sin(clock * 2.4 + i * 2) * 0.25; elbows[i].rotation.x = -0.9 + Math.sin(clock * 3.1 + i) * 0.2;
+          } else if (person.pose === 'chat' && i === 1) {
+            arms[i].rotation.x = -0.6 + Math.sin(clock * 3) * 0.25; elbows[i].rotation.x = -1.1 + Math.sin(clock * 5) * 0.2;
+          }
+        }
+        if (person.pose === 'sit') hips.position.y = 0.72;
+      }
       if (phone) phone.visible = idle && business;
       if (dead) knees.forEach(k => { k.rotation.x = 0.35; });
     },

@@ -55,7 +55,10 @@ function createWorld(s) {
   world.createCollider(RAPIER.ColliderDesc.cuboid(1400, 1, 1400).setTranslation(0, -1, 0).setFriction(0.9).setCollisionGroups(groups(GROUP.GROUND, ALL)), fixed);
   for (const [x, z, hx, hz] of [[LIMIT + 5, 0, 5, 460], [-LIMIT - 5, 0, 5, 460], [0, LIMIT + 5, 460, 5], [0, -LIMIT - 5, 460, 5]])
     world.createCollider(RAPIER.ColliderDesc.cuboid(hx, 40, hz).setTranslation(x, 40, z).setCollisionGroups(groups(GROUP.STATIC, ALL)), fixed);
-  const { posts, trees } = sceneryLayout();
+  const { posts, trees, spots } = sceneryLayout();
+  // Stall carts and bus-shelter panels are solid; benches are not, so people can sit on them.
+  for (const spot of spots) for (const prop of spot.props) if (prop.collider)
+    world.createCollider(RAPIER.ColliderDesc.cuboid(prop.size[0] / 2, prop.height / 2, prop.size[1] / 2).setTranslation(prop.x, prop.y, prop.z).setCollisionGroups(groups(GROUP.PROP, ALL)), fixed);
   for (const tree of trees) world.createCollider(RAPIER.ColliderDesc.cylinder(tree.height / 2, tree.radius).setTranslation(tree.x, tree.height / 2, tree.z).setCollisionGroups(groups(GROUP.PROP, ALL)), fixed);
   // Lamp posts stay fixed until a hard vehicle impact knocks them over.
   s.props = posts.map(post => {
@@ -178,6 +181,8 @@ function moveCharacter(P, entry, dt, vertical) {
     entry.last = { x: person.x, z: person.z }; entry.push = { x: 0, z: 0 };
     return;
   }
+  // People standing still on the ground (queues, benches, chats) skip the controller's shape casts entirely.
+  if (entry.grounded && vertical <= 0 && Math.abs(person.vx || 0) + Math.abs(person.vz || 0) < 0.02 && !entry.push.x && !entry.push.z) return;
   const desired = { x: (person.vx || 0) * dt + entry.push.x, y: vertical * dt - (vertical <= 0 ? 0.02 : 0), z: (person.vz || 0) * dt + entry.push.z };
   entry.push = { x: 0, z: 0 };
   P.kcc.computeColliderMovement(entry.collider, desired, CHARACTER_FLAGS, CHARACTER_QUERY);

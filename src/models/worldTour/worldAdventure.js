@@ -2,6 +2,7 @@ import { ROAD_GRID, vehicle, createTraffic, createPatrols, driveVehicle, steerVe
 import { stepPhysics, castShot } from './physicsEngine.js';
 import { updatePolice } from './worldPolice.js';
 import { createPedestrians, stepPedestrians } from './worldPedestrians.js';
+import { playerLook } from './characterProfile.js';
 
 export const CITIES = [
   { id: 'miami', name: 'Miami', country: 'United States', district: 'Ocean Drive', region: 'North America', color: '#ff8bb5', sky: '#d998ac', ground: '#9ba78b', buildings: ['#f5ccb5', '#b6d5cf', '#dbb1c9'], trees: 'palm', map: [25, 39], seed: 7, tagline: 'Pink skies. Fast cars. A fresh start.' },
@@ -50,8 +51,8 @@ export function cleanWorldSave(value) {
   const keys = CITIES.flatMap(c => CONTRACTS.map(m => `${c.id}:${m.id}`));
   return { city: CITIES.some(c => c.id === value?.city) ? value.city : 'miami', cash: Number.isFinite(value?.cash) ? Math.max(0, Math.min(9999999, Math.floor(value.cash))) : 0, completed: [...new Set(Array.isArray(value?.completed) ? value.completed.filter(k => keys.includes(k)) : [])] };
 }
-export function createSession(city, save = {}) {
-  const s = { city: city.id, seed: city.seed * 7919 + 17, blocks: generateBlocks(city), player: { x: 8, z: 12, heading: Math.PI, speed: 0, height: 0, velocityY: 0, waveTime: 0 }, car: vehicle('player', 3, 12, Math.PI, 'player'), traffic: createTraffic(), policeCars: createPatrols(), driving: false, health: 100, ammo: 48, weapon: 'pistol', heat: 0, quiet: 0, cooldown: 0, reload: 0, down: 0, downReason: '', arrest: 0, aimYaw: Math.PI, aimTime: 0, punchTime: 0, combo: 0, mission: null, enemies: [], shots: [], impacts: [], impactSeq: 0, time: 0, cash: save.cash || 0, completed: [...(save.completed || [])], message: 'Welcome to ' + city.name + '. Your car is parked beside you.', messageTime: 7 };
+export function createSession(city, save = {}, appearance = null) {
+  const s = { appearance, city: city.id, seed: city.seed * 7919 + 17, blocks: generateBlocks(city), player: { x: 8, z: 12, heading: Math.PI, speed: 0, height: 0, velocityY: 0, waveTime: 0, look: playerLook(appearance) }, car: vehicle('player', 3, 12, Math.PI, 'player'), traffic: createTraffic(), policeCars: createPatrols(), driving: false, health: 100, ammo: 48, weapon: 'pistol', heat: 0, quiet: 0, cooldown: 0, reload: 0, down: 0, downReason: '', arrest: 0, aimYaw: Math.PI, aimTime: 0, punchTime: 0, combo: 0, mission: null, enemies: [], shots: [], impacts: [], impactSeq: 0, time: 0, cash: save.cash || 0, completed: [...(save.completed || [])], message: 'Welcome to ' + city.name + '. Your car is parked beside you.', messageTime: 7 };
   s.pedestrians = createPedestrians(s);
   return s;
 }
@@ -186,8 +187,14 @@ function bust(s) {
   s.cash -= fine; s.down = 4; s.downReason = 'busted'; s.arrest = 0;
   notify(s, fine ? `BUSTED. You paid a $${fine} fine.` : 'BUSTED. Released with a warning.');
 }
+// A new look from the character creator. The player object is replaced (same place and motion) so the physics layer
+// rebuilds the capsule at the new body size.
+export function setAppearance(s, appearance) {
+  if (s.appearance === appearance) return;
+  s.appearance = appearance; s.player = { ...s.player, look: playerLook(appearance) };
+}
 export function recover(s) {
-  s.player = { x: 8, z: 12, heading: Math.PI, speed: 0, height: 0, velocityY: 0, waveTime: 0 }; s.car = vehicle('player', 3, 12, Math.PI, 'player'); s.driving = false; s.health = 100; s.ammo = 48; s.reload = 0; s.heat = 0; s.down = 0; s.mission = null; s.enemies = []; s.traffic = createTraffic(); s.policeCars = createPatrols(); s.incident = false; s.arrest = 0; s.downReason = ''; s.lastSeen = null; s.alarm = null;
+  s.player = { x: 8, z: 12, heading: Math.PI, speed: 0, height: 0, velocityY: 0, waveTime: 0, look: playerLook(s.appearance) }; s.car = vehicle('player', 3, 12, Math.PI, 'player'); s.driving = false; s.health = 100; s.ammo = 48; s.reload = 0; s.heat = 0; s.down = 0; s.mission = null; s.enemies = []; s.traffic = createTraffic(); s.policeCars = createPatrols(); s.incident = false; s.arrest = 0; s.downReason = ''; s.lastSeen = null; s.alarm = null;
   notify(s, 'Back at the safehouse. Any unfinished contract can be restarted.');
 }
 export function stepWorld(s, input, delta, yaw = Math.PI) {

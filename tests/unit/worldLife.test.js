@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CITIES, createSession, attack, stepWorld, targetFor, freePosition } from '../../src/models/worldTour/worldAdventure.js';
+import { CITIES, CONTRACTS, createSession, attack, stepWorld, targetFor, freePosition, generateBlocks, setAppearance } from '../../src/models/worldTour/worldAdventure.js';
+import { sceneryLayout } from '../../src/models/worldTour/worldLayout.js';
+import { BUILD_SCALE } from '../../src/models/worldTour/characterProfile.js';
 import { vehicle, createTraffic } from '../../src/models/worldTour/worldPhysics.js';
 
 const quiet = s => { s.traffic = []; s.policeCars.forEach(c => { c.x = 400; c.z = -400; c.route = []; c.loop = false; }); };
@@ -152,4 +154,56 @@ test('traffic loops use opposite lanes, keep flowing, and wedged cars reverse ou
   let reversed = false;
   for (let i = 0; i < 200; i++) { stepWorld(w, {}, 0.05); if (car.reverse > 0) reversed = true; }
   assert.ok(reversed, 'a car pressed against a wall backs up to recover');
+});
+
+test('street spots sit clear of buildings, contracts and the safehouse in every city', () => {
+  const { spots } = sceneryLayout();
+  assert.ok(spots.length >= 30); assert.ok(['stall', 'bus', 'bench', 'chat'].every(type => spots.some(spot => spot.type === type)));
+  const keep = [{ x: 8, z: 12 }, ...CONTRACTS.flatMap(m => [m.target, m.finish])];
+  for (const spot of spots) for (const point of keep) assert.ok(Math.hypot(spot.x - point.x, spot.z - point.z) > 20, `${spot.id} is clear of ${point.x},${point.z}`);
+  for (const city of CITIES) {
+    const blocks = generateBlocks(city);
+    for (const spot of spots) {
+      for (const slot of spot.slots) assert.ok(freePosition(slot.x, slot.z, blocks, 0.6), `${city.id} ${spot.id} slot`);
+      for (const prop of spot.props) assert.ok(freePosition(prop.x, prop.z, blocks, 0.2), `${city.id} ${spot.id} ${prop.kind}`);
+    }
+  }
+});
+
+test('stalls open with vendors, walkers keep visiting spots, and violence empties them', () => {
+  const s = createSession(CITIES[3]); s.traffic = [];
+  const { spots } = sceneryLayout(), stalls = spots.filter(spot => spot.type === 'stall');
+  const vendors = s.pedestrians.filter(p => p.home);
+  assert.equal(vendors.length, stalls.length, 'every stall has its vendor');
+  assert.ok(s.pedestrians.length >= 90, 'a busier city: ' + s.pedestrians.length);
+  assert.ok(s.pedestrians.some(p => p.pose === 'sit') && s.pedestrians.some(p => p.pose === 'chat'));
+  let arrivals = 0; const before = new Map(s.pedestrians.map(p => [p.id, p.mode]));
+  for (let i = 0; i < 1600; i++) {
+    stepWorld(s, {}, 0.05);
+    for (const p of s.pedestrians) { if (before.get(p.id) === 'approach' && p.mode === 'stay') arrivals++; before.set(p.id, p.mode); }
+  }
+  assert.ok(arrivals >= 10, 'walkers keep arriving at spots: ' + arrivals);
+  assert.ok(s.pedestrians.every(p => freePosition(p.x, p.z, s.blocks, 0.3)), 'nobody ends up inside a building');
+  for (const [h, slots] of s.spots.entries()) slots.forEach((id, k) => { if (id) assert.equal(s.pedestrians.find(p => p.id === id)?.spot?.h, h, `slot ${h}/${k} belongs to its occupant`); });
+  // A shot next to a stall scatters everyone there, vendor included; once it is calm the vendor goes back.
+  const vendor = vendors[0], stall = spots[vendor.home.h];
+  Object.assign(s.player, { x: stall.x, z: stall.z }); s.weapon = 'pistol'; s.enemies = []; attack(s);
+  stepWorld(s, {}, 0.05);
+  assert.equal(vendor.spot, null, 'the vendor runs'); assert.equal(s.spots[vendor.home.h][vendor.home.k], null);
+  s.heat = 0; s.alarm = null; Object.assign(s.player, { x: -400, z: 400 });
+  let back = false;
+  for (let i = 0; i < 1200 && !back; i++) { stepWorld(s, {}, 0.05); back = vendor.mode === 'stay' && vendor.spot?.h === vendor.home.h; }
+  assert.ok(back, 'the vendor reopens the stall');
+});
+
+test('the chosen build sizes the player, and a new look keeps position and motion', () => {
+  const s = createSession(CITIES[0], {}, { build: 'tall' });
+  assert.equal(s.player.look.scale, BUILD_SCALE.tall);
+  stepWorld(s, { forward: true }, 0.05);
+  const { x, z } = s.player, look = { build: 'compact' };
+  setAppearance(s, look);
+  assert.equal(s.appearance, look); assert.equal(s.player.look.scale, BUILD_SCALE.compact);
+  assert.equal(s.player.x, x); assert.equal(s.player.z, z);
+  for (let i = 0; i < 20; i++) stepWorld(s, { forward: true }, 0.05);
+  assert.ok(Math.hypot(s.player.x - x, s.player.z - z) > 3, 'the rebuilt capsule keeps walking');
 });
