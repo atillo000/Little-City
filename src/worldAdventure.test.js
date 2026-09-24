@@ -60,7 +60,8 @@ test('vehicle entry requires proximity; fast exits are blocked; movement respect
   s.car.speed = 0; toggleVehicle(s); assert.equal(s.driving, false);
   s.blocks = [{ x: 0, z: 0, width: 10, depth: 10 }]; s.player.x = 0; s.player.z = 7;
   for (let i = 0; i < 100; i++) stepWorld(s, { forward: true }, 0.05, Math.PI);
-  assert.ok(s.player.z >= 6);
+  // The Rapier capsule (radius 0.5) stops against the wall face at z = 5.
+  assert.ok(s.player.z >= 5.45 && s.player.z < 6, 'stopped at the wall: ' + s.player.z);
 });
 test('death respawns, cancels the contract and keeps earned rewards; reload restores ammunition', () => {
   const s = createSession(CITIES[0], { cash: 650, completed: ['miami:courier'] }); startContract(s, 'crew'); s.health = 0;

@@ -7,9 +7,10 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node --test src/driving.test.js src/characterMovement.test.js src/environment.test.js src/cityExperience.test.js src/worldAdventure.test.js src/worldPhysics.test.js"
+    "test": "node --test src/driving.test.js src/characterMovement.test.js src/environment.test.js src/cityExperience.test.js src/worldAdventure.test.js src/worldPhysics.test.js src/worldLife.test.js"
   },
   "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.20.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "three": "^0.180.0"

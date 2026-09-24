@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createMusicEngine, TRACKS } from './music';
 import { RECORDINGS, musicFileUrl } from './musicLibrary';
+import { MUSIC_ENABLED } from './musicConfig';
 
 export function useMusic(inLounge) {
   const [trackId, setTrackId] = useState(RECORDINGS[0].id);
@@ -31,7 +32,7 @@ export function useMusic(inLounge) {
   }, []);
   async function toggle() {
     if (playing) { pause(); return; }
-    if (!inLounge || pending.current) return;
+    if (!MUSIC_ENABLED || !inLounge || pending.current) return;
     const token = ++request.current;
     setError(''); pending.current = true; setLoading(true);
     try {
@@ -69,12 +70,12 @@ export function useMusic(inLounge) {
     if (media.current) media.current.volume = value;
   }
   function loadFile(file) {
-    if (!file) return;
+    if (!file || !MUSIC_ENABLED) return;
     pause(); releaseMedia();
     if (url.current) URL.revokeObjectURL(url.current);
     url.current = URL.createObjectURL(file);
     setLocalName(file.name); setTrackId('local'); setError('');
   }
   const track = [...RECORDINGS, ...TRACKS].find(track => track.id === trackId);
-  return { trackId, title: trackId === 'local' ? localName : track?.name, playing, loading, volume, localName, error, toggle, choose, changeVolume, loadFile, pause };
+  return { enabled: MUSIC_ENABLED, trackId, title: trackId === 'local' ? localName : track?.name, playing, loading, volume, localName, error, toggle, choose, changeVolume, loadFile, pause };
 }

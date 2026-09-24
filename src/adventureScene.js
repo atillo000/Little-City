@@ -3,7 +3,14 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createCharacter } from './character';
 import { createCar } from './car';
 import { createStreetNpc } from './streetNpc';
-import { ROADS, actor, objectivePoint, stepWorld } from './worldAdventure';
+import { ROADS, actor, objectivePoint, stepWorld, targetFor } from './worldAdventure';
+import { ACTIVE_UNIT } from './worldPolice';
+import { vehicleSpec, wheelLayout } from './physicsEngine';
+import { sceneryLayout } from './worldLayout';
+import { createRagdollRig } from './ragdollRig';
+
+const BLOOD_DROPS = 360, BLOOD_POOLS = 160;
+const OFFICER_SKIN = ['#e8bd98', '#c18b63', '#8d5a3b', '#5f3b28'];
 
 export function mountAdventure(host, session, input, paused, onUpdate, onError) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -15,6 +22,12 @@ export function mountAdventure(host, session, input, paused, onUpdate, onError) 
   const hemisphere = new THREE.HemisphereLight('#fff2df', '#54647f', 2.4); scene.add(hemisphere);
   const sun = new THREE.DirectionalLight('#ffd7b0', 3); sun.position.set(-90, 160, 100); scene.add(sun);
   let root, avatar, playerCar, marker, targetRing, dynamic, traffic = [], patrols = [], pedestrians = [], lastTime = 0, uiTime = 0, lastCity, shotLines = [], night = false;
+  let muzzle, bloodDrops, bloodPools, drops = [], pools = [], poolCursor = 0, lastImpact = 0, shake = 0;
+  const shakeOffset = new THREE.Vector3(), matrix = new THREE.Matrix4(), hidden = new THREE.Matrix4().makeScale(0, 0, 0), bloodDummy = new THREE.Object3D();
+  let postPoles, postLamps;
+  const layout = sceneryLayout(), lean = new THREE.Quaternion(), forwardAxis = new THREE.Vector3(0, 0, 1);
+  const bodyMatrix = new THREE.Matrix4(), partOffset = new THREE.Matrix4(), partWorld = new THREE.Matrix4(), partLocal = new THREE.Matrix4();
+  const tmpPosition = new THREE.Vector3(), tmpQuaternion = new THREE.Quaternion(), tmpScale = new THREE.Vector3();
   const enemies = new Map(), geometries = new Set(), materials = new Map(), textures = new Set();
   const unitBox = new THREE.BoxGeometry(1, 1, 1); geometries.add(unitBox);
   function material(color) { if (!materials.has(color)) materials.set(color, new THREE.MeshStandardMaterial({ color, roughness: 0.7 })); return materials.get(color); }
@@ -28,7 +41,7 @@ export function mountAdventure(host, session, input, paused, onUpdate, onError) 
     geometries.forEach(g => { if (g !== unitBox) { g.dispose(); geometries.delete(g); } });
     textures.forEach(t => t.dispose()); textures.clear();
     for (const [key, mat] of materials) if (key.startsWith('label-')) { mat.dispose(); materials.delete(key); }
-    enemies.clear(); traffic = []; patrols = []; pedestrians = [];
+    enemies.clear(); traffic = []; patrols = []; pedestrians = []; drops = []; pools = []; poolCursor = 0;
     shotLines.forEach(l => { scene.remove(l); l.geometry.dispose(); l.material.dispose(); }); shotLines = [];
   }
   function build(city) {
@@ -58,19 +71,16 @@ export function mountAdventure(host, session, input, paused, onUpdate, onError) 
       if (night) box([b.width, 0.6, 0.4], city.color, [b.x, 3.4, b.z + b.depth / 2 + 0.3]);
       if (city.id === 'dubai' && b.height > 70) box([1.5, 25, 1.5], '#c3ced1', [b.x, b.height + 12, b.z]);
     }
-    for (let n = -400; n <= 400; n += 34) for (const x of [-410, 405]) {
-      box([0.7, 10, 0.7], '#827362', [x, 5, n]);
-      if (city.trees === 'palm') for (let a = 0; a < 5; a++) box([12, 0.6, 2.4], '#537e63', [x, 10, n], a * Math.PI / 5);
-      else box([8, 7, 8], city.trees === 'cherry' ? '#d39eae' : '#668766', [x, 11, n]);
-    }
-    for (let z = -390; z < 410; z += 45) for (const x of [-15, 15]) {
-      if (ROADS.some(road => Math.abs(road - z) < 17)) continue;
-      box([0.6, 8, 0.6], '#8b7f68', [x, 4, z]);
-      if (city.trees === 'palm') for (let a = 0; a < 4; a++) box([8, 0.4, 1.6], '#547f68', [x, 8, z], a * Math.PI / 4);
-      else box([5, 5, 5], city.trees === 'cherry' ? '#dca8bd' : '#648567', [x, 8, z]);
-    }
-    for (const x of ROADS) for (let z = -400; z < 440; z += 90) {
-      box([0.3, 8, 0.3], '#596773', [x + 14, 4, z]); box([3, 0.3, 1], '#fff0b9', [x + 13, 8, z]);
+    for (const tree of layout.trees) {
+      if (tree.edge) {
+        box([0.7, 10, 0.7], '#827362', [tree.x, 5, tree.z]);
+        if (city.trees === 'palm') for (let a = 0; a < 5; a++) box([12, 0.6, 2.4], '#537e63', [tree.x, 10, tree.z], a * Math.PI / 5);
+        else box([8, 7, 8], city.trees === 'cherry' ? '#d39eae' : '#668766', [tree.x, 11, tree.z]);
+      } else {
+        box([0.6, 8, 0.6], '#8b7f68', [tree.x, 4, tree.z]);
+        if (city.trees === 'palm') for (let a = 0; a < 4; a++) box([8, 0.4, 1.6], '#547f68', [tree.x, 8, tree.z], a * Math.PI / 4);
+        else box([5, 5, 5], city.trees === 'cherry' ? '#dca8bd' : '#648567', [tree.x, 8, tree.z]);
+      }
     }
     // A coastal promenade and an airport at the edge of every district.
     box([7, 0.3, 875], '#d5c7b5', [425, 0, 0]); box([21, 0.1, 220], '#53616b', [-413, 0.1, -200]);
@@ -83,6 +93,10 @@ export function mountAdventure(host, session, input, paused, onUpdate, onError) 
       const mesh = new THREE.InstancedMesh(unitBox, material(color), entries.length);
       entries.forEach((e, i) => { dummy.position.set(...e.position); dummy.scale.set(...e.size); dummy.rotation.set(0, e.rotation, 0); dummy.updateMatrix(); mesh.setMatrixAt(i, dummy.matrix); }); mesh.computeBoundingSphere(); root.add(mesh);
     }
+    // Lamp posts are physics props that a fast car can knock over, so they are instanced separately.
+    postPoles = new THREE.InstancedMesh(unitBox, material('#596773'), layout.posts.length); postLamps = new THREE.InstancedMesh(unitBox, material('#fff0b9'), layout.posts.length);
+    postPoles.frustumCulled = postLamps.frustumCulled = false; root.add(postPoles, postLamps);
+    layout.posts.forEach((post, i) => placePost(i, { x: post.x, y: 4, z: post.z, q: [0, 0, 0, 1] }));
     function label(text, x, z, color) {
       const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 128;
       const ctx = canvas.getContext('2d'); ctx.fillStyle = '#142634'; ctx.fillRect(0, 0, 512, 128); ctx.fillStyle = color; ctx.font = 'bold 46px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(text, 256, 80, 480);
@@ -90,11 +104,19 @@ export function mountAdventure(host, session, input, paused, onUpdate, onError) 
       const mat = new THREE.SpriteMaterial({ map: texture }); materials.set('label-' + text, mat); const sprite = new THREE.Sprite(mat); sprite.position.set(x, 6, z); sprite.scale.set(8, 2, 1); root.add(sprite);
     }
     label('SAFEHOUSE', 8, 12, '#86edcb'); label(city.district.toUpperCase(), 0, -32, city.color); label('AIRPORT', -413, -110, '#ffffff');
-    avatar = createCharacter(root, kit, { shirt: '#e5ded5' }); avatar.avatar.visible = true;
+    avatar = createCharacter(root, kit, { shirt: '#e5ded5' }); avatar.avatar.visible = true; avatar.rig = createRagdollRig(avatar.avatar, 'player');
     const hand = avatar.avatar.getObjectByName('right-hand'); const gun = kit.box([0.16, 0.22, 0.65], '#25303c', [0, -0.16, 0.23], hand); gun.name = 'pistol';
+    if (!materials.has('muzzle')) materials.set('muzzle', new THREE.MeshBasicMaterial({ color: '#ffe7a3' }));
+    muzzle = new THREE.Mesh(unitBox, materials.get('muzzle')); muzzle.scale.set(2.2, 1.6, 0.9); muzzle.position.set(0, 0, 0.75); muzzle.visible = false; gun.add(muzzle);
+    // Pooled blood droplets and ground stains, updated as instances.
+    if (!materials.has('blood')) { materials.set('blood', new THREE.MeshStandardMaterial({ color: '#7b0913', roughness: 0.35 })); materials.set('blood-pool', new THREE.MeshStandardMaterial({ color: '#4f050c', roughness: 0.18, metalness: 0.05 })); }
+    bloodDrops = new THREE.InstancedMesh(unitBox, materials.get('blood'), BLOOD_DROPS); bloodDrops.frustumCulled = false; bloodDrops.count = 0; root.add(bloodDrops);
+    const poolGeometry = new THREE.CylinderGeometry(1, 1, 0.02, 14); geometries.add(poolGeometry);
+    bloodPools = new THREE.InstancedMesh(poolGeometry, materials.get('blood-pool'), BLOOD_POOLS); bloodPools.frustumCulled = false; bloodPools.count = 0; root.add(bloodPools);
+    lastImpact = session.current.impactSeq || 0;
     playerCar = createCar(root, kit, glow, { color: '#67dccc', headlights: false }); playerCar.car.scale.setScalar(1.7);
     for (let i = 0; i < session.current.traffic.length; i++) {
-      const model = createCar(root, kit, glow, { color: ['#dba186', '#d0c9bb', '#798bac', '#bc7d94'][i % 4], headlights: false }); model.car.scale.setScalar(1.5);
+      const model = createCar(root, kit, glow, { color: ['#dba186', '#d0c9bb', '#798bac', '#bc7d94', '#e6d27a', '#8fb89a', '#f2f0ea', '#3b4450'][i % 8], headlights: false }); model.car.scale.setScalar(1.5);
       traffic.push(model);
     }
     for (let i = 0; i < session.current.policeCars.length; i++) {
@@ -105,17 +127,85 @@ export function mountAdventure(host, session, input, paused, onUpdate, onError) 
       model.lights.forEach(light => { light.material.emissive.copy(light.material.color); light.material.emissiveIntensity = 2; });
       patrols.push(model);
     }
-    for (let i = 0; i < session.current.pedestrians.length; i++) pedestrians.push(createStreetNpc(root, kit, { shirt: ['#e7b591', '#99b5c0', '#cc93a3'][i % 3] }));
+    for (const person of session.current.pedestrians) { const model = createStreetNpc(root, kit, { shirt: person.look?.shirt, role: person.role, look: person.look }); model.rig = createRagdollRig(model.avatar, 'npc'); pedestrians.push(model); }
     const markerGeo = new THREE.OctahedronGeometry(2.8); geometries.add(markerGeo); marker = new THREE.Mesh(markerGeo, material('#f8d47a')); root.add(marker);
-    const ringGeo = new THREE.TorusGeometry(3.5, 0.15, 6, 24); geometries.add(ringGeo); targetRing = new THREE.Mesh(ringGeo, material('#ff727f')); targetRing.rotation.x = Math.PI / 2; root.add(targetRing);
+    if (!materials.has('lock')) materials.set('lock', new THREE.MeshBasicMaterial({ color: '#ff727f' }));
+    const ringGeo = new THREE.TorusGeometry(2.2, 0.12, 6, 24); geometries.add(ringGeo); targetRing = new THREE.Mesh(ringGeo, materials.get('lock')); targetRing.rotation.x = Math.PI / 2; root.add(targetRing);
     const p = actor(session.current); camera.position.set(p.x, 11, p.z + 24); orbit.target.set(p.x, 1.8, p.z); orbit.update();
   }
   const follow = new THREE.Vector3(), shift = new THREE.Vector3();
-  function updateCar(model, body, dt) {
-    model.car.position.set(body.x, Math.sin(body.impact * 9) * body.impact * 0.06, body.z);
-    model.car.rotation.set(body.pitch || 0, body.heading, body.roll || 0, 'YXZ');
-    model.wheels.forEach((wheel, index) => { wheel.rotation.x += body.speed * dt / 0.55; if (index % 2) wheel.rotation.y = body.steer || 0; });
+  // Cars take their full pose from Rapier: chassis position/orientation, wheel spin, steering and suspension travel.
+  function updateCar(model, body) {
+    model.car.position.set(body.x, (body.y || 0) + Math.sin(body.impact * 9) * body.impact * 0.06, body.z);
+    if (body.q) model.car.quaternion.set(...body.q); else model.car.rotation.set(0, body.heading, 0);
+    // A light cosmetic lean into corners on top of the simulated suspension.
+    model.car.quaternion.multiply(lean.setFromAxisAngle(forwardAxis, Math.max(-0.08, Math.min(0.08, (body.yawRate || 0) * (body.speed || 0) * 0.004))));
+    const scale = vehicleSpec(body).scale, rest = wheelLayout(scale).y;
+    model.wheels.forEach((wheel, index) => {
+      const w = body.wheels?.[index]; if (!w) return;
+      wheel.rotation.x = w.rotation; wheel.rotation.y = w.steer; wheel.position.y = (rest - w.suspension) / scale;
+    });
     const hood = model.car.children[1]; hood.scale.y = 0.2 * (1 - body.damage * 0.003);
+  }
+  function placePost(i, prop) {
+    tmpPosition.set(prop.x, prop.y, prop.z); tmpQuaternion.set(...prop.q);
+    bodyMatrix.compose(tmpPosition, tmpQuaternion, tmpScale.set(1, 1, 1));
+    postPoles.setMatrixAt(i, partWorld.multiplyMatrices(bodyMatrix, partOffset.makeScale(0.3, 8, 0.3)));
+    postLamps.setMatrixAt(i, partWorld.multiplyMatrices(bodyMatrix, partOffset.makeTranslation(-1, 4, 0).multiply(partLocal.makeScale(3, 0.3, 1))));
+    postPoles.instanceMatrix.needsUpdate = postLamps.instanceMatrix.needsUpdate = true;
+  }
+  // Ground height under a point: sidewalk kerbs, road surface or grass.
+  function surfaceY(x, z) {
+    if (ROADS.some(r => Math.abs(Math.abs(x - r) - 12) < 1.6 || Math.abs(Math.abs(z - r) - 12) < 1.6)) return 0.27;
+    return ROADS.some(r => Math.abs(x - r) < 10.6 || Math.abs(z - r) < 10.6) ? 0.19 : -0.08;
+  }
+  function addPool(x, z, radius, delay, grow) { pools[poolCursor % BLOOD_POOLS] = { x, z, y: surfaceY(x, z) + (poolCursor % 7) * 0.003, radius, age: -delay, grow, life: 75 }; poolCursor++; }
+  // Blood from punches, gunshots and vehicle hits: droplets arc under gravity and stain the ground where they land.
+  function spray(hit) {
+    if (hit.kind === 'pool') { addPool(hit.x + hit.dx * 0.9, hit.z + hit.dz * 0.9, 1.3 + Math.random() * 0.7, 0.8, 5); return; }
+    const count = Math.round((hit.kind === 'car' ? 28 : hit.kind === 'punch' ? 16 : 12) * hit.power);
+    for (let i = 0; i < count && drops.length < BLOOD_DROPS; i++) {
+      const force = (hit.kind === 'car' ? 6 : 3) + Math.random() * 4;
+      drops.push({ x: hit.x + (Math.random() - 0.5) * 0.4, y: hit.y + (Math.random() - 0.5) * 0.5, z: hit.z + (Math.random() - 0.5) * 0.4, vx: hit.dx * force + (Math.random() - 0.5) * 3, vy: 1 + Math.random() * 4, vz: hit.dz * force + (Math.random() - 0.5) * 3, size: 0.08 + Math.random() * 0.15 });
+    }
+    addPool(hit.x + hit.dx * 1.2, hit.z + hit.dz * 1.2, 0.3 + Math.random() * 0.35 * hit.power, 0.2, 0.3);
+  }
+  function updateBlood(dt) {
+    drops = drops.filter(d => {
+      d.vy -= 20 * dt; d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt;
+      if (d.y > surfaceY(d.x, d.z) + 0.05) return true;
+      if (Math.random() < 0.35) addPool(d.x, d.z, 0.1 + d.size * 1.5, 0, 0.12);
+      return false;
+    });
+    drops.forEach((d, i) => { bloodDummy.position.set(d.x, d.y, d.z); bloodDummy.scale.set(d.size, d.size * 1.6, d.size); bloodDummy.rotation.set(0, 0, 0); bloodDummy.updateMatrix(); bloodDrops.setMatrixAt(i, bloodDummy.matrix); });
+    bloodDrops.count = drops.length; bloodDrops.instanceMatrix.needsUpdate = true;
+    pools.forEach((pool, i) => {
+      pool.age += dt;
+      const size = pool.radius * Math.min(1, Math.max(0, pool.age) / pool.grow) * Math.min(1, Math.max(0, (pool.life - pool.age) / 4));
+      if (size <= 0.001) { bloodPools.setMatrixAt(i, hidden); return; }
+      matrix.makeScale(size, 1, size * 0.85).setPosition(pool.x, pool.y, pool.z); bloodPools.setMatrixAt(i, matrix);
+    });
+    bloodPools.count = pools.length; bloodPools.instanceMatrix.needsUpdate = true;
+  }
+  const elbowOf = arm => arm.children.find(child => child.isGroup);
+  // Combat poses layered over the shared character animation: two-handed aim with recoil, boxing guard and punches.
+  function posePlayer(s) {
+    const right = avatar.avatar.getObjectByName('right-shoulder'), left = avatar.avatar.getObjectByName('left-shoulder');
+    const shot = s.shots.find(x => !x.police);
+    muzzle.visible = !!shot && shot.ttl > 0.07 && s.weapon === 'pistol';
+    if (s.driving || s.down) return;
+    if (s.weapon === 'pistol' && (s.aimTime > 0 || input.current.attack)) {
+      const recoil = shot ? shot.ttl / 0.12 : 0;
+      right.rotation.set(-1.5 - recoil * 0.4, 0, 0.12); elbowOf(right).rotation.set(recoil * -0.3, 0, 0);
+      left.rotation.set(-1.35, 0, 0.55); elbowOf(left).rotation.set(-0.35, 0, 0);
+    } else if (s.weapon === 'fists' && (s.aimTime > 0 || s.punchTime > 0)) {
+      for (const [arm, inward] of [[left, 1], [right, -1]]) { arm.rotation.set(-1.05, 0, inward * 0.3); elbowOf(arm).rotation.set(-1.9, 0, 0); }
+      if (s.punchTime > 0) {
+        const reach = Math.sin(Math.min(1, (1 - s.punchTime / 0.28) * 1.7) * Math.PI), arm = s.combo === 1 ? left : right, inward = arm === left ? 1 : -1;
+        arm.rotation.x = -1.05 - reach * 0.55; elbowOf(arm).rotation.x = -1.9 * (1 - reach);
+        if (s.combo === 2) arm.rotation.z = inward * (0.3 + reach * 0.7);
+      }
+    }
   }
   function resize() { camera.aspect = host.clientWidth / Math.max(1, host.clientHeight); camera.updateProjectionMatrix(); renderer.setSize(host.clientWidth, host.clientHeight); }
   const observer = new ResizeObserver(resize); observer.observe(host); resize();
@@ -126,29 +216,40 @@ export function mountAdventure(host, session, input, paused, onUpdate, onError) 
     const dt = lastTime ? Math.min(0.05, (time - lastTime) / 1000) : 0; lastTime = time;
     const yaw = Math.atan2(orbit.target.x - camera.position.x, orbit.target.z - camera.position.z);
     if (!paused.current && !document.hidden) stepWorld(s, input.current, dt, yaw);
-    const p = actor(s), point = objectivePoint(s);
-    avatar.avatar.visible = !s.driving; avatar.update(s.player, paused.current ? 0 : dt); avatar.avatar.position.y = 0.2 + s.player.height; avatar.avatar.getObjectByName('pistol').visible = s.weapon === 'pistol';
-    if (s.cooldown > 0) { avatar.avatar.getObjectByName('right-shoulder').rotation.x = -1.3; }
-    updateCar(playerCar, s.car, paused.current ? 0 : dt);
+    const p = actor(s), point = objectivePoint(s), step = paused.current || document.hidden ? 0 : dt;
+    avatar.avatar.visible = !s.driving; avatar.rig.before(s.player); avatar.update(s.player, paused.current ? 0 : dt); avatar.avatar.position.y = 0.2 + s.player.height; avatar.avatar.getObjectByName('pistol').visible = s.weapon === 'pistol';
+    posePlayer(s); avatar.rig.after(s.player, step);
+    for (const hit of s.impacts) {
+      if (hit.id <= lastImpact) continue;
+      lastImpact = hit.id;
+      if (hit.blood && s.blood !== false) spray(hit);
+      if (hit.kind !== 'pool' && Math.hypot(hit.x - p.x, hit.z - p.z) < 7) shake = Math.min(0.6, shake + (hit.kind === 'car' ? 0.35 : hit.kind === 'punch' ? 0.22 * hit.power : 0.12));
+    }
+    updateBlood(step);
+    updateCar(playerCar, s.car);
+    s.props?.forEach((prop, i) => { if (prop.fallen) placePost(i, prop); });
     marker.visible = !!point; if (point) { marker.position.set(point.x, 6 + Math.sin(s.time * 2), point.z); marker.rotation.y = s.time; }
     for (const e of s.enemies) {
       if (!enemies.has(e.id)) {
-        const model = createStreetNpc(dynamic, kit, { shirt: e.kind === 'police' ? '#4366af' : '#b64e6d', armed: true, police: e.kind === 'police' });
-        const bar = kit.box([1.6, 0.15, 0.15], '#ff747b', [0, 3.7, 0], model.avatar); bar.name = 'health'; enemies.set(e.id, model);
+        const hash = [...e.id].reduce((sum, c) => sum + c.charCodeAt(0), 0);
+        const model = createStreetNpc(dynamic, kit, { shirt: e.kind === 'police' ? '#4366af' : '#b64e6d', armed: true, police: e.kind === 'police', look: { skin: OFFICER_SKIN[hash % 4], hairStyle: hash % 3 ? 'short' : 'cap', hair: '#221a16' } });
+        const bar = kit.box([1.6, 0.15, 0.15], '#ff747b', [0, 3.7, 0], model.avatar); bar.name = 'health'; model.rig = createRagdollRig(model.avatar, 'npc'); enemies.set(e.id, model);
       }
-      const model = enemies.get(e.id); model.update(e, paused.current ? 0 : dt); model.avatar.getObjectByName('health').visible = e.health > 0; model.avatar.getObjectByName('health').scale.x = Math.max(0.01, e.health / 100 * 1.6);
+      const model = enemies.get(e.id); model.rig.before(e); model.update(e, paused.current ? 0 : dt); model.rig.after(e, step); model.avatar.getObjectByName('health').visible = e.health > 0; model.avatar.getObjectByName('health').scale.x = Math.max(0.01, e.health / 100 * 1.6);
     }
     for (const [id, model] of enemies) if (!s.enemies.some(e => e.id === id)) { dynamic.remove(model.avatar); enemies.delete(id); }
-    const closest = s.enemies.filter(e => e.health > 0).sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z))[0];
-    targetRing.visible = !!closest; if (closest) targetRing.position.set(closest.x, 0.25, closest.z);
+    // The ring marks exactly who an attack would hit now; while driving it marks the nearest threat.
+    const lock = s.driving ? s.enemies.filter(e => e.health > 0).sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z))[0] : targetFor(s);
+    targetRing.visible = !!lock;
+    if (lock) { targetRing.position.set(lock.x, 0.35, lock.z); targetRing.rotation.z = s.time * 2; targetRing.material.color.set(lock.kind === 'civilian' ? '#f3ece1' : '#ff727f'); }
     shotLines.forEach(line => { root.remove(line); line.geometry.dispose(); line.material.dispose(); });
     shotLines = s.shots.map(shot => { const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(shot.x, 2.1, shot.z), new THREE.Vector3(shot.tx, 2, shot.tz)]); const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: shot.police ? '#ff7881' : '#fff4b0' })); root.add(line); return line; });
-    traffic.forEach((model, i) => updateCar(model, s.traffic[i], paused.current ? 0 : dt));
+    traffic.forEach((model, i) => updateCar(model, s.traffic[i]));
     patrols.forEach((model, i) => {
-      const car = s.policeCars[i]; updateCar(model, car, paused.current ? 0 : dt);
-      model.lights.forEach((light, side) => { light.visible = ['responding', 'onscene'].includes(car.state) && Math.floor(s.time * 8) % 2 === side; });
+      const car = s.policeCars[i]; updateCar(model, car);
+      model.lights.forEach((light, side) => { light.visible = ACTIVE_UNIT.includes(car.state) && Math.floor(s.time * 8) % 2 === side; });
     });
-    pedestrians.forEach((model, i) => model.update(s.pedestrians[i], paused.current ? 0 : dt));
+    pedestrians.forEach((model, i) => { const person = s.pedestrians[i]; model.rig.before(person); model.update(person, paused.current ? 0 : dt); model.rig.after(person, step); });
     follow.set(p.x, 1.8 + (s.player.height || 0) * 0.3, p.z); shift.copy(follow).sub(orbit.target); camera.position.add(shift); orbit.target.copy(follow);
     orbit.enabled = !paused.current; orbit.update();
     // Keep the camera in front of walls, including when orbiting around a corner.
@@ -164,7 +265,12 @@ export function mountAdventure(host, session, input, paused, onUpdate, onError) 
       if (hit && enter > 0) fraction = Math.min(fraction, Math.max(0.04, enter - 0.02));
     }
     if (fraction < 1) camera.position.copy(orbit.target).addScaledVector(offset, fraction);
+    // Impact shake is applied only for this render so it never accumulates into the orbit camera.
+    shake *= Math.exp(-9 * step);
+    const shaking = shake > 0.01 && step > 0;
+    if (shaking) { shakeOffset.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(shake); camera.position.add(shakeOffset); }
     renderer.render(scene, camera);
+    if (shaking) camera.position.sub(shakeOffset);
     if (time - uiTime > 100) { onUpdate(s); uiTime = time; }
   });
   return () => { renderer.setAnimationLoop(null); observer.disconnect(); orbit.dispose(); disposeCity(); geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); renderer.domElement.removeEventListener('webglcontextlost', lost); renderer.dispose(); renderer.domElement.remove(); };
