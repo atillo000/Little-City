@@ -1,5 +1,5 @@
 -- Little City multiplayer: Realtime Authorization for the game's private channels.
--- Run once in the Supabase SQL editor. See docs/MULTIPLAYER.md for the full setup.
+-- Run once in the Supabase SQL editor. See README.md, section 14 ("Turn on online play") for the full setup.
 --
 -- Players sign in anonymously (Authentication > Sign In / Providers > "Allow anonymous sign-ins"), which gives them the
 -- `authenticated` role. With Realtime's "Allow public access" turned off, only private channels authorised below work,
