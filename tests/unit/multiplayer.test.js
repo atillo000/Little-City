@@ -104,3 +104,14 @@ test('the build policy names only the configured Supabase project; the SQL polic
   assert.ok(topic.test(LOBBY_CHANNEL)); assert.ok(!topic.test('little-city:city:atlantis')); assert.ok(!topic.test('other-app:room'));
   assert.equal((sql.match(/to authenticated/g) || []).length, 2); assert.doesNotMatch(sql, /to anon\b/);
 });
+
+test('the build accepts Vercel-style names and refuses to publish a secret key', async () => {
+  const { resolveSupabaseEnv, isSecretKey } = await import('../../src/config/supabaseEnv.js');
+  assert.deepEqual(resolveSupabaseEnv({ SUPABASE_URL: ' https://abc.supabase.co ', SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_x' }), { url: 'https://abc.supabase.co', key: 'sb_publishable_x', urlName: 'SUPABASE_URL', keyName: 'SUPABASE_PUBLISHABLE_KEY' });
+  assert.equal(resolveSupabaseEnv({ VITE_SUPABASE_URL: 'https://v.supabase.co', SUPABASE_URL: 'https://other.supabase.co', VITE_SUPABASE_ANON_KEY: 'k' }).url, 'https://v.supabase.co');
+  assert.deepEqual(resolveSupabaseEnv({}), { url: '', key: '', urlName: null, keyName: null });
+  const jwt = role => ['e30', Buffer.from(JSON.stringify({ role })).toString('base64url'), 'sig'].join('.');
+  assert.equal(isSecretKey(jwt('anon')), false); assert.equal(isSecretKey(jwt('service_role')), true); assert.equal(isSecretKey('sb_secret_abc'), true);
+  assert.throws(() => resolveSupabaseEnv({ SUPABASE_URL: 'https://abc.supabase.co', SUPABASE_PUBLISHABLE_KEY: 'sb_secret_abc' }), /secret\/service-role key/);
+  assert.throws(() => resolveSupabaseEnv({ SUPABASE_ANON_KEY: jwt('service_role') }), /SUPABASE_ANON_KEY/);
+});

@@ -59,7 +59,7 @@ All characters, vehicles, and scenery are procedural geometry. No model download
 
 `vercel.json` configures the deployment: `npm ci`, `npm run build`, and static serving of `dist/`. It sends the production security headers from `src/config/security.js` (CSP including `frame-ancestors 'none'`, `nosniff`, referrer and permissions policies). It also caches the content-hashed `/assets/*` files, including the large Rapier chunk, for a year. `index.html` and other files keep Vercel's default revalidation, so new deployments show up immediately. A unit test keeps the headers identical to `security.js`: after changing the policy, update both files.
 
-- **From Git:** import the repository in the Vercel dashboard. The framework (Vite), commands and output directory come from `vercel.json`. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for online multiplayer (optional; see [Multiplayer](docs/MULTIPLAYER.md)). Keep the project's Node.js version at 20.x or newer (Vite 7 needs 20.19+).
+- **From Git:** import the repository in the Vercel dashboard. The framework (Vite), commands and output directory come from `vercel.json`. Add `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` (or the `VITE_` names) for online multiplayer (optional; see [Multiplayer](docs/MULTIPLAYER.md)). Keep the project's Node.js version at 20.x or newer (Vite 7 needs 20.19+).
 - **From the CLI:** `npx vercel` for a preview deployment, `npx vercel --prod` for production. `.vercelignore` keeps `node_modules`, `dist` and test output from being uploaded.
 
 ## Maintenance checks

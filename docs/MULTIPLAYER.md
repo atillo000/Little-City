@@ -24,7 +24,7 @@ Other players are **ghosts**: visible, not collidable, and they cannot be attack
 3. **Realtime → Settings**: turn off **Allow public access**, so only private channels with policies work.
 4. **SQL editor**: run `supabase/realtime-policies.sql`. It allows signed-in (including anonymous) players to send and receive Broadcast and Presence on the lobby and the seven city channels, and nothing else.
 5. **Project Settings → API**: copy the Project URL and the anon (publishable) key.
-6. **Vercel → Project → Settings → Environment Variables**: add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for Production (and Preview if wanted), then redeploy. For local development, put the same two lines in `.env.local` (git-ignored; see `.env.example`).
+6. **Vercel → Project → Settings → Environment Variables**: add the Project URL as `SUPABASE_URL` (or `VITE_SUPABASE_URL`) and the publishable key as `SUPABASE_PUBLISHABLE_KEY` (or `VITE_SUPABASE_ANON_KEY`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_ANON_KEY`) for Production (and Preview if wanted), then **redeploy**: the values are built into the page, and the build log prints `Multiplayer: online via …`. Marking them Sensitive is fine but does not hide them from players; they are public by design. The build refuses a secret/service-role key. For local development, put the same two lines in `.env.local` (git-ignored; see `.env.example`).
 
 Never use the service-role key in a `VITE_*` variable: everything prefixed `VITE_` is bundled into public JavaScript.
 
