@@ -7,7 +7,10 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node --test src/driving.test.js src/characterMovement.test.js src/environment.test.js src/cityExperience.test.js src/worldAdventure.test.js src/worldPhysics.test.js src/worldLife.test.js"
+    "test": "node --test tests/unit/*.test.js",
+    "test:architecture": "node --test tests/unit/architecture.test.js",
+    "test:browser": "npm run build && node tests/browser/smoke.mjs",
+    "audit:security": "npm audit --audit-level=moderate"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.20.0",
@@ -17,6 +20,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^5.0.0",
+    "playwright": "^1.63.0",
     "vite": "^7.1.0"
   }
 }

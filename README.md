@@ -1,5 +1,7 @@
 # Little City
 
+Source is organized into MVC layers with separate hooks, services and Three.js scenes. See [Architecture](docs/ARCHITECTURE.md) and [Security boundaries](docs/SECURITY.md) for the directory map, dependency rules, save validation and deployment configuration.
+
 ## World Tour action mode
 
 The game now opens in **World Tour**, an original, stylized open-world action mode. Explore seven destinations: Miami, Tokyo, Manila, London, Dubai, Rio de Janeiro, and Cape Town. Each has an 880-by-880 playable district, 144 buildings, a coastal promenade, an airport, 18 traffic cars, and three contracts. Around 50 pedestrians fill the sidewalks: families with children holding a parent's hand, office workers with briefcases who stop to take calls, joggers, and friends who stop to chat. They turn at corners, window-shop, and flee from violence. Cities use distinct colors, building heights and vegetation. The travel map connects these districts with instant flights; this is not a real-scale replica of Earth.
@@ -30,7 +32,7 @@ On-screen action buttons and mobile movement controls provide the same actions. 
 
 Use **Pause → Original neighborhood** to return to the existing neighborhood, community jobs, lounge and music. **World tour** returns to action mode. The original neighborhood documentation follows below.
 
-Run `npm test` for movement, mission, combat, pursuit, street-life, save validation, and legacy gameplay checks; `npm run build` creates the production bundle. `test-results/world-adventure-check.mjs` runs the desktop/mobile browser checks against a local server on port 5173 using Chrome.
+Run `npm test` for movement, mission, combat, pursuit, street-life, save validation, and legacy gameplay checks; `npm run build` creates the production bundle. `npm run test:browser` builds and runs the maintained production smoke checks for both modes using Playwright. See docs/ARCHITECTURE.md for browser installation and override options.
 
 A cozy React + Three.js neighborhood game. Drive through a living city, meet Maya, and help your neighbors. The former portfolio has become a community hub, cafe, repair shop, market, and public library.
 
@@ -65,7 +67,7 @@ Touch screens have directional controls, a brake outside, and Run / Jump / Wave 
 
 The **Studio Lounge** sits directly north of the community hub, at the middle of the north street. Click **Lounge** in the top menu or directory and choose **Enter the lounge**; no driving, parking, or mission is required. It has sofas, a record console, speakers, and a close third-person walking view. Furniture and walls block movement.
 
-**Music is switched off for now** while the song library moves to Supabase Storage (`MUSIC_ENABLED` in `src/musicConfig.js`). The lounge stays open, and the console says music is coming soon. When it is re-enabled, the features below return unchanged.
+**Music is switched off for now** while the song library moves to Supabase Storage (`MUSIC_ENABLED` in `src/config/musicConfig.js`). The lounge stays open, and the console says music is coming soon. When it is re-enabled, the features below return unchanged.
 
 Use the **Music console** button inside, or walk to the decks and press E. The music library includes:
 
@@ -76,7 +78,7 @@ Use the **Music console** button inside, or walk to the decks and press E. The m
 
 Press **Play music** for recordings and loops; playback is never automatic. Volume and Pause controls are provided. You can also select an audio file from your device; it stays local and is not uploaded. Closing the console keeps this audio playing inside the room. Leaving the lounge, switching guests, or hiding the tab pauses it. A returning visit does not restart playback automatically.
 
-Online songs require internet access and play through visible YouTube controls after you select a song. Online videos stop when the console closes, the category changes, you leave the room, or the tab is hidden. Each has an **Open on YouTube** fallback for unavailable embeds. These commercial recordings are not downloaded or bundled. Add further official video IDs to `src/musicLibrary.js`; only put recordings with redistribution permission in `public/music/` and include their credits.
+Online songs require internet access and play through visible YouTube controls after you select a song. Online videos stop when the console closes, the category changes, you leave the room, or the tab is hidden. Each has an **Open on YouTube** fallback for unavailable embeds. These commercial recordings are not downloaded or bundled. Add further official video IDs to `src/models/musicLibrary.js`; only put recordings with redistribution permission in `public/music/` and include their credits.
 
 Waves use articulated shoulders, elbows, and wrists; walking and jumping include knee motion. Jump cannot retrigger in midair, and a held wave key does not loop the gesture. Keyboard and pointer controls combine, so holding the on-screen Run button while pressing W works. Releasing either input or changing rooms clears the appropriate controls.
 
@@ -107,16 +109,20 @@ npm run build
 
 On Windows PowerShell, use `npm.cmd` if execution policy blocks `npm.ps1`. Vite serves localhost, normally port 5173. Deploy `dist/` to static hosting. Gameplay needs WebGL 2; the journal remains readable if rendering fails.
 
-- `src/missions.js`: job stories, objective order, inventory, rewards, and save validation.
-- `src/gameLocations.js`: destinations and distance checks for interactions.
-- `src/jobScenery.js`: objective marker, coffee cargo, lost bag, and repairable market lights.
-- `src/loungeScenery.js`, `src/LoungeDialog.jsx`: listening-room geometry and music controls.
-- `src/music.js`, `src/musicLibrary.js`, `src/useMusic.js`: original Web Audio loops, licensed recording and official video catalogues, local-file playback, volume, and audio cleanup.
-- `src/controls.js`: combined keyboard and touch input.
-- `src/GuestExperience.jsx`, `src/App.jsx`: guest entry, journal, task interactions, controls, and HUD.
-- `src/useGuest.js`: guest persistence and migration.
-- `src/City.jsx`, `src/cityScenery.js`, `src/cityLife.js`: scene, neighborhood geometry, and ambient actors.
-- `src/driving.js`, `src/characterMovement.js`: driving, walking, and collisions.
-- `src/useEnvironment.js`, `src/lighting.js`, `src/weatherScene.js`: weather, clock, and atmosphere.
+- `src/models/neighborhood/missions.js`: job stories, objective order, inventory, rewards, and save validation.
+- `src/models/neighborhood/gameLocations.js`: destinations and distance checks for interactions.
+- `src/scenes/neighborhood/jobScenery.js`: objective marker, coffee cargo, lost bag, and repairable market lights.
+- `src/scenes/neighborhood/loungeScenery.js`, `src/views/neighborhood/LoungeDialog.jsx`: listening-room geometry and music controls.
+- `src/services/musicEngine.js`, `src/models/musicLibrary.js`, `src/hooks/useMusic.js`: original Web Audio loops, licensed recording and official video catalogues, local-file playback, volume, and audio cleanup.
+- `src/models/neighborhood/controls.js`: combined keyboard and touch input.
+- `src/views/neighborhood/`, `src/controllers/useNeighborhoodController.js`: guest entry, journal, task interactions, controls, and HUD.
+- `src/hooks/useGuest.js`: guest persistence and migration.
+- `src/views/neighborhood/CityCanvas.jsx`, `src/scenes/neighborhood/cityScenery.js`, `src/scenes/neighborhood/cityLife.js`: scene, neighborhood geometry, and ambient actors.
+- `src/models/neighborhood/driving.js`, `src/models/neighborhood/characterMovement.js`: driving, walking, and collisions.
+- `src/hooks/useEnvironment.js`, `src/scenes/neighborhood/lighting.js`, `src/scenes/neighborhood/weatherScene.js`: weather, clock, and atmosphere.
 
 All characters, vehicles, and scenery are procedural geometry. No model downloads or API keys are required.
+
+## Maintenance checks
+
+Run `npm test` for gameplay, architecture and security regressions, `npm run test:architecture` for dependency boundaries, `npm run test:browser` for production browser checks, and `npm run audit:security` for known dependency advisories. Browser snapshots are generated under `test-results/`; test code belongs under `tests/`. Production hosting must apply the response headers described in [Security boundaries](docs/SECURITY.md).

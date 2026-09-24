@@ -1,0 +1,81 @@
+import assert from 'node:assert/strict';
+import { existsSync, mkdirSync } from 'node:fs';
+import { chromium } from 'playwright';
+import { preview } from 'vite';
+
+// Builds are tested with the real production CSP, on an unused loopback port.
+const server = await preview({ preview: { host: '127.0.0.1', port: 0, strictPort: false } });
+const address = server.httpServer.address();
+const base = `http://127.0.0.1:${address.port}`;
+const chrome = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || (process.platform === 'win32' && existsSync('C:/Program Files/Google/Chrome/Application/chrome.exe') ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : undefined);
+let browser;
+try {
+  browser = await chromium.launch({ executablePath: chrome, headless: true, args: ['--enable-unsafe-swiftshader'] });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+  page.setDefaultTimeout(45000);
+  const errors = [], violations = [], externalMusic = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('console', message => { if (message.type() === 'error' && /Content Security Policy|Refused to/.test(message.text())) violations.push(message.text()); });
+  page.on('request', request => { if (/youtube|\/music\/.*\.mp3/.test(request.url())) externalMusic.push(request.url()); });
+  await page.route('https://fonts.googleapis.com/**', route => route.fulfill({ contentType: 'text/css', body: '' }));
+  await page.route('https://api.open-meteo.com/**', route => route.fulfill({ json: { current: { time: Date.now() / 1000, temperature_2m: 28, weather_code: 1, cloud_cover: 25, wind_speed_10m: 5 } } }));
+  const response = await page.goto(base, { waitUntil: 'networkidle' });
+  assert.match(response.headers()['content-security-policy'], /frame-ancestors 'none'/);
+  assert.equal(await page.locator('meta[http-equiv="Content-Security-Policy"]').count(), 1);
+  const button = name => page.getByRole('button', { name, exact: true });
+  const close = () => button('Close dialog').click();
+  const pause = () => button('Controls and pause menu').click();
+  await page.waitForFunction(() => !document.querySelector('.adventure-loading'));
+  assert.equal(await page.locator('.adventure-canvas canvas').count(), 1);
+  const playerMarker = page.locator('.adventure-radar svg > path').last();
+  const before = await playerMarker.getAttribute('transform');
+  await page.keyboard.down('KeyW'); await page.waitForTimeout(750); await page.keyboard.up('KeyW');
+  assert.notEqual(await playerMarker.getAttribute('transform'), before, 'World Tour movement still works');
+  await pause(); await button('Blood effects: On').click();
+  assert.equal(await button('Blood effects: Off').count(), 1); await close();
+  await page.keyboard.press('KeyM');
+  await page.getByRole('button', { name: /Japan Tokyo/ }).click();
+  await page.waitForFunction(() => document.querySelector('.adventure-location h1')?.textContent.includes('Tokyo'));
+  await page.reload({ waitUntil: 'networkidle' }); await page.waitForFunction(() => !document.querySelector('.adventure-loading'));
+  assert.match(await page.locator('.adventure-location h1').innerText(), /Tokyo/);
+  await page.keyboard.press('KeyL'); await page.getByRole('button', { name: 'Accept contract' }).first().click();
+  await page.keyboard.press('KeyM'); assert.equal(await page.getByRole('button', { name: /Philippines Manila/ }).isDisabled(), true); await close();
+  await page.keyboard.press('KeyL'); await button('Abandon current contract').click();
+  await pause(); assert.equal(await button('Blood effects: Off').count(), 1);
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  }
+  await button('Original neighborhood').click();
+  await page.getByLabel('What should we call you?').fill('<img src=x onerror=1>');
+  await page.getByRole('button', { name: 'Enter as guest' }).click();
+  assert.equal(await page.locator('.guest-name').innerText(), '<img src=x onerror=1>');
+  assert.equal(await page.locator('.guest-name img').count(), 0, 'guest content remains escaped text');
+  const guests = () => page.evaluate(() => JSON.parse(localStorage.getItem('little-city-guests-v2')));
+  const initial = await guests();
+  const worldSave = await page.evaluate(() => localStorage.getItem('little-city-world-v1'));
+  const nav = page.getByRole('navigation', { name: 'City destinations' });
+  await nav.getByRole('button', { name: 'Lounge', exact: true }).click(); await page.getByRole('button', { name: 'Enter the lounge' }).click();
+  await page.locator('.is-lounge').waitFor(); await page.locator('.lounge-music-button').click();
+  await page.getByText(/coming soon/i).first().waitFor();
+  assert.equal(await page.locator('iframe').count(), 0); assert.deepEqual(externalMusic, []); await close();
+  assert.deepEqual(await guests(), initial, 'free exploration does not alter guest missions');
+  await button('Back to city').click(); await button('Enter hub').click();
+  await page.locator('.character-hud').waitFor({ state: 'attached' });
+  const zBefore = await page.locator('.character-hud').getAttribute('data-z');
+  await page.keyboard.down('KeyW'); await page.waitForTimeout(500); await page.keyboard.up('KeyW');
+  assert.notEqual(await page.locator('.character-hud').getAttribute('data-z'), zBefore, 'neighborhood controls still work');
+  await button('Wave').click(); await page.getByRole('button', { name: 'Waving' }).waitFor();
+  assert.equal(await page.evaluate(() => localStorage.getItem('little-city-world-v1')), worldSave, 'mode saves stay isolated');
+  mkdirSync('test-results', { recursive: true });
+  await page.screenshot({ path: 'test-results/mvc-neighborhood-mobile.png' });
+  await page.getByRole('button', { name: 'World tour' }).click();
+  await page.waitForFunction(() => !document.querySelector('.adventure-loading'));
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.screenshot({ path: 'test-results/mvc-world-desktop.png' });
+  assert.deepEqual(errors, []); assert.deepEqual(violations, []);
+  console.log('Browser checks passed: production CSP + Rapier, walking, travel/reload, contract restrictions, preferences, both modes, guest text escaping, separate saves, disabled music, mobile layouts, indoor walking and waving.');
+} finally {
+  await browser?.close();
+  await new Promise(resolve => server.httpServer.close(resolve));
+}
