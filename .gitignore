@@ -5,3 +5,6 @@ dist/
 test-results/
 .npm-cache/
 .vercel
+.env
+.env.*
+!.env.example

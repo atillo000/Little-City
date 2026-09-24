@@ -6,6 +6,7 @@ import { disposePhysics } from '../models/worldTour/physicsEngine.js';
 import { readWorldSave, serializeWorldSave, writeWorldSave } from '../services/worldStorage.js';
 import { readBloodPreference, writeBloodPreference } from '../services/preferences.js';
 import { useWorldInput } from '../hooks/useWorldInput.js';
+import { useMultiplayer } from '../hooks/useMultiplayer.js';
 import { policeStatus, snapshot } from '../models/worldTour/presentation.js';
 import { displayName } from '../models/worldTour/characterProfile.js';
 
@@ -21,6 +22,7 @@ export function useWorldController(character = null, suspended = false) {
   paused.current = !!panel || error || suspended;
   useEffect(() => { if (suspended) clear(); }, [suspended]);
   useEffect(() => { setAppearance(session.current, character); setHud(snapshot(session.current)); }, [character]);
+  const online = useMultiplayer(session, character, hud.city);
   const city = hud.cityInfo, current = CONTRACTS.find(m => m.id === hud.mission?.id), p = actor(hud), point = objectivePoint(hud);
   function open(value) { clear(); setPanel(value); }
   function save(s) {
@@ -31,7 +33,7 @@ export function useWorldController(character = null, suspended = false) {
   useEffect(() => {
     document.title = 'Little City: World Tour';
     let dispose;
-    try { dispose = mountAdventure(host.current, session, input, paused, s => { setHud(snapshot(s)); save(s); setReady(true); }, () => setError(true)); }
+    try { dispose = mountAdventure(host.current, session, input, paused, s => { setHud(snapshot(s)); save(s); setReady(true); }, () => setError(true), online.roster); }
     catch (e) { console.error('World scene could not start', e); setError(true); }
     // The Rapier world lives in WebAssembly memory, so it is freed explicitly (it is rebuilt if the scene remounts).
     return () => { dispose?.(); disposePhysics(session.current); };
@@ -61,5 +63,5 @@ export function useWorldController(character = null, suspended = false) {
   function abandonContract() { session.current.mission = null; session.current.enemies = session.current.enemies.filter(e => e.kind !== 'gang'); notify(session.current, 'Contract abandoned. You can accept it again.'); setHud(snapshot(session.current)); open(null); }
   function recoverToSafehouse() { recover(session.current); setHud(snapshot(session.current)); open(null); }
   const playerName = displayName(character);
-  return { playerName, hud, panel, ready, error, storage, host, city, current, p, point, open, action, toggleBlood, touchControl, travel, dispatchTitle, dispatchHint, task, blood, acceptContract, abandonContract, recoverToSafehouse };
+  return { online, playerName, hud, panel, ready, error, storage, host, city, current, p, point, open, action, toggleBlood, touchControl, travel, dispatchTitle, dispatchHint, task, blood, acceptContract, abandonContract, recoverToSafehouse };
 }

@@ -11,7 +11,8 @@ const chrome = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || (process.platf
 let browser;
 try {
   browser = await chromium.launch({ executablePath: chrome, headless: true, args: ['--enable-unsafe-swiftshader'] });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 960 } });
+  const page = await context.newPage();
   page.setDefaultTimeout(45000);
   const errors = [], violations = [], external = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -69,8 +70,28 @@ try {
   await button('Cancel').click();
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.screenshot({ path: 'test-results/world-desktop.png' });
+  // Shared world: a second tab (no Supabase keys in this build, so the same-browser transport) joins the same city.
+  assert.match(await page.locator('.adventure-online').innerText(), /Local · 0 other tabs/);
+  const friend = await context.newPage();
+  friend.on('pageerror', error => errors.push(error.message));
+  await friend.setViewportSize({ width: 1280, height: 800 });
+  await friend.goto(base, { waitUntil: 'networkidle' });
+  await friend.waitForFunction(() => document.querySelector('.adventure-canvas canvas') && !document.querySelector('.adventure-loading'));
+  await page.bringToFront();
+  await page.locator('.adventure-online', { hasText: 'Local · 1 other tab' }).waitFor();
+  await friend.locator('.adventure-online', { hasText: 'Local · 1 other tab' }).waitFor();
+  const ghost = page.locator('.adventure-radar circle.remote-player');
+  await ghost.waitFor();
+  const start = Number(await ghost.getAttribute('cy'));
+  await friend.bringToFront(); await friend.keyboard.down('KeyW'); await friend.waitForTimeout(1500); await friend.keyboard.up('KeyW');
+  await page.bringToFront();
+  await page.waitForFunction(y => Math.abs(Number(document.querySelector('.adventure-radar circle.remote-player')?.getAttribute('cy')) - y) > 4, start);
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: 'test-results/multiplayer-ghost.png' });
+  await friend.close();
+  await page.locator('.adventure-online', { hasText: 'Local · 0 other tabs' }).waitFor({ timeout: 10000 });
   assert.deepEqual(errors, []); assert.deepEqual(violations, []); assert.deepEqual(external, [], 'no third-party requests');
-  console.log('Browser checks passed: production CSP + Rapier, first-launch character creator with live preview, escaped names, saved look, walking, travel/reload, contract restrictions, preferences, editing the character mid-game, no third-party requests, mobile layouts.');
+  console.log('Browser checks passed: production CSP + Rapier, first-launch character creator with live preview, escaped names, saved look, walking, travel/reload, contract restrictions, preferences, editing the character mid-game, a second player joining, moving and leaving, no third-party requests, mobile layouts.');
 } finally {
   await browser?.close();
   await new Promise(resolve => server.httpServer.close(resolve));

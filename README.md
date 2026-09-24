@@ -30,6 +30,10 @@ Each destination offers **Midnight delivery** ($650), **Take back the block** ($
 
 On-screen action buttons and mobile movement controls provide the same actions. Menus pause gameplay. Cash, completed contracts, and the selected city save locally under `little-city-world-v1`; unfinished contracts restart after a page reload. If browser storage is unavailable, a message in Contracts explains that progress lasts for the session.
 
+## Playing together
+
+Players in the same city see each other: their own character look, a name tag, their car while they drive, and a dot on the minimap. The world map shows who is online in each city, and a HUD chip shows the connection. It runs on Supabase Realtime (anonymous sign-in, private channels) once `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set; see [Multiplayer](docs/MULTIPLAYER.md) for the one-time setup. Without them, tabs in the same browser still share the world locally. Other players are ghosts: traffic, pedestrians, police, contracts and combat stay your own, and you cannot collide with or fight each other.
+
 ## Your character
 
 On first launch the game opens a character creator before anything else loads. Choose a name, skin tone, hair style (short, long, buzz cut, bun, cap or bald) and colour, shirt, trousers, shoes and build (compact, average or tall), with a live 3D preview you can drag to turn. **Randomize** rolls a look, and **Start playing** begins your first flight. The look is saved on this browser under `little-city-character-v1`. Build changes your in-game size: capsule, ragdoll and model. Use **Pause → Edit character** to change your look at any time: the game pauses, and your cash, contracts and position stay as they are. Names are plain text, limited to 24 characters.
@@ -55,7 +59,7 @@ All characters, vehicles, and scenery are procedural geometry. No model download
 
 `vercel.json` configures the deployment: `npm ci`, `npm run build`, and static serving of `dist/`. It sends the production security headers from `src/config/security.js` (CSP including `frame-ancestors 'none'`, `nosniff`, referrer and permissions policies). It also caches the content-hashed `/assets/*` files, including the large Rapier chunk, for a year. `index.html` and other files keep Vercel's default revalidation, so new deployments show up immediately. A unit test keeps the headers identical to `security.js`: after changing the policy, update both files.
 
-- **From Git:** import the repository in the Vercel dashboard. The framework (Vite), commands and output directory come from `vercel.json`; no environment variables are needed. Keep the project's Node.js version at 20.x or newer (Vite 7 needs 20.19+).
+- **From Git:** import the repository in the Vercel dashboard. The framework (Vite), commands and output directory come from `vercel.json`. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for online multiplayer (optional; see [Multiplayer](docs/MULTIPLAYER.md)). Keep the project's Node.js version at 20.x or newer (Vite 7 needs 20.19+).
 - **From the CLI:** `npx vercel` for a preview deployment, `npx vercel --prod` for production. `.vercelignore` keeps `node_modules`, `dist` and test output from being uploaded.
 
 ## Maintenance checks

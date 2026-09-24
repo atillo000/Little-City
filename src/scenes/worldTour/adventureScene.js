@@ -7,12 +7,14 @@ import { ROADS, actor, objectivePoint, stepWorld, targetFor } from '../../models
 import { ACTIVE_UNIT } from '../../models/worldTour/worldPolice.js';
 import { vehicleSpec, wheelLayout } from '../../models/worldTour/physicsEngine.js';
 import { sceneryLayout } from '../../models/worldTour/worldLayout.js';
+import { visiblePlayers } from '../../models/worldTour/multiplayer.js';
 import { createRagdollRig } from '../shared/ragdollRig.js';
 
 const BLOOD_DROPS = 360, BLOOD_POOLS = 160;
 const OFFICER_SKIN = ['#e8bd98', '#c18b63', '#8d5a3b', '#5f3b28'];
 
-export function mountAdventure(host, session, input, paused, onUpdate, onError) {
+// `remote` (optional) is the multiplayer roster ref from useMultiplayer: other players are drawn as ghosts.
+export function mountAdventure(host, session, input, paused, onUpdate, onError, remote = null) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5)); renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.2;
@@ -37,6 +39,7 @@ export function mountAdventure(host, session, input, paused, onUpdate, onError) 
   };
   const glow = { glow() {}, light() {} };
   function disposeCity() {
+    for (const id of [...remotes.keys()]) removeRemote(id);
     if (root) { root.traverse(o => { if (o.isInstancedMesh) o.dispose(); }); scene.remove(root); }
     geometries.forEach(g => { if (g !== unitBox) { g.dispose(); geometries.delete(g); } });
     textures.forEach(t => t.dispose()); textures.clear();
@@ -143,6 +146,46 @@ export function mountAdventure(host, session, input, paused, onUpdate, onError) 
     if (!materials.has('muzzle')) materials.set('muzzle', new THREE.MeshBasicMaterial({ color: '#ffe7a3' }));
     muzzle = new THREE.Mesh(unitBox, materials.get('muzzle')); muzzle.scale.set(2.2, 1.6, 0.9); muzzle.position.set(0, 0, 0.75); muzzle.visible = false; gun.add(muzzle);
   }
+  // ---- Other players (multiplayer ghosts): their own look, a name tag, and a car model while they drive.
+  const remotes = new Map(), REMOTE_CARS = ['#f2c14e', '#e76f51', '#8ab17d', '#9d8df1', '#ef8fb1', '#5fa8d3'];
+  function nameTag(text) {
+    const canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 64;
+    const ctx = canvas.getContext('2d'); ctx.fillStyle = '#142634d9'; ctx.fillRect(0, 8, 256, 48); ctx.fillStyle = '#9ee8d1'; ctx.fillRect(0, 8, 6, 48);
+    ctx.fillStyle = '#f3eee5'; ctx.font = 'bold 26px Arial, sans-serif'; ctx.textAlign = 'center'; ctx.fillText(text, 131, 41, 236);
+    const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false })); sprite.scale.set(3.6, 0.9, 1); sprite.renderOrder = 5; return sprite;
+  }
+  function createRemote(id, profile, key) {
+    const rig = createCharacter(root, kit, { ...profile.look, scale: profile.scale }); rig.avatar.visible = true;
+    const hash = [...id].reduce((sum, c) => sum + c.charCodeAt(0), 0);
+    const car = createCar(root, kit, glow, { color: REMOTE_CARS[hash % REMOTE_CARS.length], headlights: false }); car.car.scale.setScalar(1.7); car.car.visible = false;
+    const tag = nameTag(profile.name); root.add(tag);
+    const model = { rig, car, tag, key }; remotes.set(id, model); return model;
+  }
+  function removeRemote(id) {
+    const model = remotes.get(id); if (!model) return;
+    root.remove(model.rig.avatar, model.car.car, model.tag); model.tag.material.map.dispose(); model.tag.material.dispose(); remotes.delete(id);
+  }
+  function updateRemotes(s, dt) {
+    if (!remote?.current) return;
+    const seen = new Set();
+    for (const { id, profile, pose } of visiblePlayers(remote.current, actor(s), performance.now())) {
+      seen.add(id);
+      const key = JSON.stringify(profile);
+      let model = remotes.get(id);
+      if (!model || model.key !== key) { removeRemote(id); model = createRemote(id, profile, key); }
+      model.rig.avatar.visible = !pose.d; model.car.car.visible = pose.d;
+      if (pose.d) {
+        model.car.car.position.set(pose.x, pose.y, pose.z); model.car.car.quaternion.set(...pose.q);
+        model.car.wheels.forEach(wheel => { wheel.rotation.x += pose.s * dt / 0.55; });
+      } else {
+        model.rig.update({ x: pose.x, z: pose.z, heading: pose.h, height: pose.y, speed: pose.s, waveTime: 0 }, dt);
+        model.rig.avatar.position.y = 0.2 * profile.scale + pose.y;
+      }
+      model.tag.position.set(pose.x, pose.y + (pose.d ? 3.6 : 4.2 * profile.scale), pose.z);
+    }
+    for (const id of [...remotes.keys()]) if (!seen.has(id)) removeRemote(id);
+  }
   const follow = new THREE.Vector3(), shift = new THREE.Vector3();
   const nearCamera = person => (person.x - orbit.target.x) ** 2 + (person.z - orbit.target.z) ** 2 < 240 * 240;
   // Cars take their full pose from Rapier: chassis position/orientation, wheel spin, steering and suspension travel.
@@ -238,6 +281,7 @@ export function mountAdventure(host, session, input, paused, onUpdate, onError) 
       if (hit.kind !== 'pool' && Math.hypot(hit.x - p.x, hit.z - p.z) < 7) shake = Math.min(0.6, shake + (hit.kind === 'car' ? 0.35 : hit.kind === 'punch' ? 0.22 * hit.power : 0.12));
     }
     updateBlood(step);
+    updateRemotes(s, paused.current ? 0 : dt);
     updateCar(playerCar, s.car);
     s.props?.forEach((prop, i) => { if (prop.fallen) placePost(i, prop); });
     marker.visible = !!point; if (point) { marker.position.set(point.x, 6 + Math.sin(s.time * 2), point.z); marker.rotation.y = s.time; }

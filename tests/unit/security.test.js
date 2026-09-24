@@ -42,7 +42,12 @@ test('unavailable, corrupt and oversized storage fail without breaking play', ()
 test('the production policy allows only this origin plus WebAssembly compilation for Rapier', () => {
   assert(CONTENT_SECURITY_POLICY.includes("script-src 'self' 'wasm-unsafe-eval'"));
   assert(!CONTENT_SECURITY_POLICY.includes("'unsafe-eval'"));
-  assert.doesNotMatch(CONTENT_SECURITY_POLICY, /https?:\/\//, 'no third-party origins are allowed');
+  // The only remote hosts are Supabase Realtime's, and only for connections (never scripts, styles or frames).
+  const directives = Object.fromEntries(CONTENT_SECURITY_POLICY.split('; ').map(d => [d.split(' ')[0], d.split(' ').slice(1)]));
+  for (const [name, sources] of Object.entries(directives)) {
+    const remote = sources.filter(source => /^(https?|wss?):/.test(source));
+    assert.deepEqual(remote, name === 'connect-src' ? ['https://*.supabase.co', 'wss://*.supabase.co'] : [], name);
+  }
   assert.match(PREVIEW_HEADERS['Permissions-Policy'], /geolocation=\(\)/);
 });
 test('the Vercel deployment sends exactly the production security headers and caches only hashed assets', () => {
